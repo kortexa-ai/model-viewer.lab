@@ -1,0 +1,34 @@
+## Project Setup - 2026-01-08
+
+✅ Initialized project using weird.lab as structural template
+✅ Copied configuration files (vite.config.js, biome.json, components.json, .gitignore)
+✅ Copied nginx/ directory for deployment
+✅ Created minimal source files (main.jsx, App.jsx, utils.js, main.css)
+✅ Updated package.json with model-viewer.lab name and added MediaPipe dependencies
+✅ Installed npm dependencies successfully
+✅ Verified build works (npm run build)
+
+### Files Created:
+- package.json (with @mediapipe/face_mesh and @mediapipe/camera_utils)
+- vite.config.js (base: "/model-viewer/")
+- biome.json
+- components.json
+- .gitignore
+- index.html
+- src/main.jsx
+- src/App.jsx (minimal placeholder)
+- src/lib/utils.js
+- src/styles/main.css
+- nginx/ directory
+
+### Next Steps:
+- [x] GLTF Loader (URL parameters)
+- [ ] GLTF Loader (drag-and-drop/file selection)
+- [ ] Parallax View with virtual box grid
+- [ ] Face tracking with MediaPipe
+- [ ] Camera perspective updates
+
+## Updates - 2026-01-09
+
+✅ Implemented GLTF loading via the `?model=` URL parameter
+✅ Added Three.js scene bootstrap with camera framing and load status messaging
