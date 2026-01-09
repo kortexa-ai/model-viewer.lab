@@ -3,50 +3,50 @@
 @plugin "tailwindcss-animate";
 
 :root {
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  color: #e6f1ff;
-  background-color: #020205;
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	color: #e6f1ff;
+	background-color: #020205;
 }
 
 * {
-  box-sizing: border-box;
+	box-sizing: border-box;
 }
 
 html,
 body,
 #root {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
+	width: 100%;
+	height: 100%;
+	margin: 0;
+	padding: 0;
 }
 
 body {
-  overflow: hidden;
+	overflow: hidden;
 }
 
 .app {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-  background: #020205;
+	position: relative;
+	width: 100vw;
+	height: 100vh;
+	overflow: hidden;
+	background: #020205;
 }
 
 .viewer {
-  position: absolute;
-  inset: 0;
+	position: absolute;
+	inset: 0;
 }
 
 .placeholder {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 24px;
-  font-family: 'Space Grotesk', sans-serif;
-  color: rgba(233, 245, 255, 0.8);
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	font-size: 24px;
+	font-family: "Space Grotesk", sans-serif;
+	color: rgba(233, 245, 255, 0.8);
 }

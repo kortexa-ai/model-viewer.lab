@@ -36,3 +36,30 @@
 ✅ Refactored App.jsx to separate scene initialization from model loading for dynamic updates
 ✅ Implemented virtual box grid for parallax view (6x6x6 unit box with 5 visible walls)
 ✅ Updated model scaling to ~2/3 of box size as per PRD requirements
+## Face Tracking Implementation - 2026-01-08
+
+✅ Implemented MediaPipe face tracking integration
+✅ Added face position tracking using nose tip landmark (landmark 1)
+✅ Implemented camera perspective updates with specified sensitivity:
+   - Horizontal movement: 3x scaling
+   - Vertical movement: 1.5x scaling
+✅ Integrated face tracking into animation loop for real-time parallax effect
+✅ Fixed all linting issues (biome check passes)
+✅ Verified build succeeds without errors
+
+### Implementation Details:
+- Added MediaPipe FaceMesh initialization with face detection confidence 0.5
+- Hidden video element for camera feed (1px x 1px, opacity 0)
+- Face position tracked relative to screen center (normalized to -1 to 1 range)
+- Camera position updated in animation loop to create parallax effect
+- Both model and background grid transform together maintaining depth illusion
+
+### Files Modified:
+- src/App.jsx (added face tracking, camera position updates)
+
+### All PRD Requirements Complete:
+✅ Project Setup
+✅ GLTF Loader (URL + drag-and-drop)
+✅ Parallax View with virtual box grid
+✅ Face Tracking with MediaPipe
+✅ Camera perspective updates with correct sensitivity

@@ -12,22 +12,22 @@ A 3D model viewer that allows users to inspect GLTF models using Three.js. The v
 ## Requirements
 
 ### Project Setup
-- [ ] Initialize project using `../weird.lab` as a structural template.
-- [ ] Copy configuration (vite, biome, tailwind, etc.), `nginx/`, and directory structure.
-- [ ] **Important**: Remove `weird.lab` specific application logic/components.
-- [ ] Update `package.json` name and dependencies.
+- [x] Initialize project using `../weird.lab` as a structural template.
+- [x] Copy configuration (vite, biome, tailwind, etc.), `nginx/`, and directory structure.
+- [x] **Important**: Remove `weird.lab` specific application logic/components.
+- [x] Update `package.json` name and dependencies.
 
 ### Core Features
-- [ ] **GLTF Loader**:
-  - [ ] Support loading models via URL parameters.
-  - [ ] Support loading models via local file drag-and-drop or selection.
-- [ ] **Parallax View**:
-  - [ ] Render a "virtual box" grid. The device screen acts as the front window of this box.
-  - [ ] Position loaded models in the center of this box, scaled to ~2/3 of the box size.
-  - [ ] **Face Tracking (MediaPipe)**:
-    - [ ] Track user face position relative to the center of the screen.
-    - [ ] **Input Scaling**: Scale horizontal movement by **3x** and vertical movement by **1.5x**.
-    - [ ] **Perspective Update**: Adjust the camera/scene to simulate the user's changing viewing angle. Both the model and the background grid must transform to maintain the illusion of depth (parallax).
+- [x] **GLTF Loader**:
+  - [x] Support loading models via URL parameters.
+  - [x] Support loading models via local file drag-and-drop or selection.
+- [x] **Parallax View**:
+  - [x] Render a "virtual box" grid. The device screen acts as the front window of this box.
+  - [x] Position loaded models in the center of this box, scaled to ~2/3 of the box size.
+  - [x] **Face Tracking (MediaPipe)**:
+    - [x] Track user face position relative to the center of the screen.
+    - [x] **Input Scaling**: Scale horizontal movement by **3x** and vertical movement by **1.5x**.
+    - [x] **Perspective Update**: Adjust the camera/scene to simulate the user's changing viewing angle. Both the model and the background grid must transform to maintain the illusion of depth (parallax).
 
 ## Technical Specs
 
