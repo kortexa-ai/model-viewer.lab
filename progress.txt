@@ -24,7 +24,7 @@
 ### Next Steps:
 - [x] GLTF Loader (URL parameters)
 - [x] GLTF Loader (drag-and-drop/file selection)
-- [ ] Parallax View with virtual box grid
+- [x] Parallax View with virtual box grid
 - [ ] Face tracking with MediaPipe
 - [ ] Camera perspective updates
 
@@ -34,3 +34,5 @@
 ✅ Added Three.js scene bootstrap with camera framing and load status messaging
 ✅ Implemented drag-and-drop GLTF/GLB file loading
 ✅ Refactored App.jsx to separate scene initialization from model loading for dynamic updates
+✅ Implemented virtual box grid for parallax view (6x6x6 unit box with 5 visible walls)
+✅ Updated model scaling to ~2/3 of box size as per PRD requirements
