@@ -30,6 +30,44 @@ function disposeModel(object) {
   });
 }
 
+const BOX_SIZE = 6;
+
+function createVirtualBoxGrid() {
+  const group = new THREE.Group();
+  const gridColor = 0x444444;
+  const lineCount = 10;
+
+  // Back wall grid
+  const backGrid = new THREE.GridHelper(BOX_SIZE, lineCount, gridColor, gridColor);
+  backGrid.rotation.x = Math.PI / 2;
+  backGrid.position.z = -BOX_SIZE / 2;
+  group.add(backGrid);
+
+  // Floor grid
+  const floorGrid = new THREE.GridHelper(BOX_SIZE, lineCount, gridColor, gridColor);
+  floorGrid.position.y = -BOX_SIZE / 2;
+  group.add(floorGrid);
+
+  // Ceiling grid
+  const ceilingGrid = new THREE.GridHelper(BOX_SIZE, lineCount, gridColor, gridColor);
+  ceilingGrid.position.y = BOX_SIZE / 2;
+  group.add(ceilingGrid);
+
+  // Left wall grid
+  const leftGrid = new THREE.GridHelper(BOX_SIZE, lineCount, gridColor, gridColor);
+  leftGrid.rotation.z = Math.PI / 2;
+  leftGrid.position.x = -BOX_SIZE / 2;
+  group.add(leftGrid);
+
+  // Right wall grid
+  const rightGrid = new THREE.GridHelper(BOX_SIZE, lineCount, gridColor, gridColor);
+  rightGrid.rotation.z = Math.PI / 2;
+  rightGrid.position.x = BOX_SIZE / 2;
+  group.add(rightGrid);
+
+  return group;
+}
+
 function frameObject(camera, object, offset = 1.4) {
   const box = new THREE.Box3().setFromObject(object);
   const size = box.getSize(new THREE.Vector3());
@@ -42,8 +80,12 @@ function frameObject(camera, object, offset = 1.4) {
   object.position.sub(center);
 
   const maxDimension = Math.max(size.x, size.y, size.z);
+  const targetSize = (BOX_SIZE * 2) / 3;
+  const scale = targetSize / maxDimension;
+  object.scale.setScalar(scale);
+
   const fov = (camera.fov * Math.PI) / 180;
-  let cameraZ = Math.abs(maxDimension / 2 / Math.tan(fov / 2));
+  let cameraZ = Math.abs(BOX_SIZE / 2 / Math.tan(fov / 2));
   cameraZ *= offset;
 
   camera.position.set(0, 0, cameraZ);
@@ -62,6 +104,7 @@ export function App() {
   const cameraRef = useRef(null);
   const rendererRef = useRef(null);
   const modelRef = useRef(null);
+  const gridRef = useRef(null);
 
   // Initialize Scene
   useEffect(() => {
@@ -97,6 +140,11 @@ export function App() {
     const directional = new THREE.DirectionalLight(0xffffff, 0.9);
     directional.position.set(4, 6, 8);
     scene.add(directional);
+
+    // Virtual Box Grid
+    const grid = createVirtualBoxGrid();
+    scene.add(grid);
+    gridRef.current = grid;
 
     // Resize Handler
     const handleResize = () => {
