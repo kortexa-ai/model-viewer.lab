@@ -137,22 +137,28 @@ function createVirtualBoxGrid(width, height, depth) {
 function frameObject(object, boxWidth, boxHeight, boxDepth) {
     // Ensure matrix is updated for accurate bounding box
     object.updateMatrixWorld(true);
-    
+
 	const box = new THREE.Box3().setFromObject(object);
 	const size = box.getSize(new THREE.Vector3());
-	const center = box.getCenter(new THREE.Vector3());
 
 	if (size.length() === 0) {
 		return;
 	}
 
-	object.position.sub(center);
-	object.position.z = -boxDepth / 2;
-
+	// Scale first
 	const maxDimension = Math.max(size.x, size.y, size.z);
 	const targetSize = Math.min(boxWidth, boxHeight, boxDepth) * 0.6;
 	const scale = targetSize / maxDimension;
 	object.scale.setScalar(scale);
+
+	// Recalculate bounding box after scaling
+	object.updateMatrixWorld(true);
+	const scaledBox = new THREE.Box3().setFromObject(object);
+	const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
+
+	// Center the scaled model
+	object.position.sub(scaledCenter);
+	object.position.z = -boxDepth / 2;
 }
 
 function getModelMetadata(object, sourceName) {
@@ -181,6 +187,7 @@ export function App() {
 	const containerRef = useRef(null);
 	const videoRef = useRef(null);
 	const fileInputRef = useRef(null);
+	const textureFileInputRef = useRef(null);
 
 	// State
 	const [modelSource, setModelSource] = useState(() => getModelUrl());
@@ -199,6 +206,7 @@ export function App() {
 	const [animations, setAnimations] = useState([]);
 	const [activeAnimIndex, setActiveAnimIndex] = useState(null);
 	const [isPlaying, setIsPlaying] = useState(false);
+	const [missingTextures, setMissingTextures] = useState([]);
 
 	// Three.js references
 	const sceneRef = useRef(null);
@@ -214,6 +222,7 @@ export function App() {
 	const mixerRef = useRef(null);
 	const actionsRef = useRef([]);
 	const clockRef = useRef(new THREE.Clock());
+	const materialsNeedingTexturesRef = useRef([]); // [{material, mapType, expectedPath}]
 
 	// Tracking references
 	const faceLandmarkerRef = useRef(null);
@@ -250,6 +259,9 @@ export function App() {
 		const renderer = new THREE.WebGLRenderer({ antialias: true });
 		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 		renderer.setSize(container.clientWidth, container.clientHeight);
+		renderer.outputColorSpace = THREE.SRGBColorSpace; // Critical for correct color rendering
+		renderer.toneMapping = THREE.ACESFilmicToneMapping;
+		renderer.toneMappingExposure = 1.0;
 		container.appendChild(renderer.domElement);
 		rendererRef.current = renderer;
 
@@ -508,22 +520,36 @@ export function App() {
 		}
 
 		setStatus("loading");
-		const loader = new GLTFLoader();
+
+		// Track texture loading errors
+		const textureErrors = [];
+		const loadingManager = new THREE.LoadingManager();
+
+		loadingManager.onError = (url) => {
+			// Extract filename from URL
+			const filename = url.split('/').pop().split('\\').pop();
+			if (!textureErrors.includes(filename)) {
+				textureErrors.push(filename);
+			}
+		};
+
+		const loader = new GLTFLoader(loadingManager);
 
         // 1. CLEAR PREVIOUS MODEL - Immediate Cleanup
 		if (modelRef.current) {
-            console.log("Removing previous model", modelRef.current);
 			sceneRef.current.remove(modelRef.current);
 			disposeModel(modelRef.current);
 			modelRef.current = null;
 		}
 
-		// Reset Mixer
+		// Reset Mixer and Textures
 		mixerRef.current = null;
 		actionsRef.current = [];
 		setAnimations([]);
 		setActiveAnimIndex(null);
 		setIsPlaying(false);
+		setMissingTextures([]);
+		materialsNeedingTexturesRef.current = [];
 
 		loader.load(
 			modelSource,
@@ -570,6 +596,35 @@ export function App() {
 						mixer.clipAction(clip),
 					);
 				}
+
+				// Check for missing textures using LoadingManager errors
+				// Wait a bit for async texture loads to complete/fail
+				setTimeout(() => {
+					if (textureErrors.length > 0) {
+						// Find which materials need these textures
+						const materialInfo = [];
+						model.traverse((child) => {
+							if (child.isMesh && child.material) {
+								const materials = Array.isArray(child.material) ? child.material : [child.material];
+								materials.forEach((material) => {
+									// Add all materials to the list for each failed texture
+									// (most models have few materials, so this is fine)
+									textureErrors.forEach((filename) => {
+										// Add entry for 'map' type (most common for colormap)
+										materialInfo.push({
+											material,
+											mapType: 'map',
+											expectedFilename: filename,
+											originalPath: filename
+										});
+									});
+								});
+							}
+						});
+						materialsNeedingTexturesRef.current = materialInfo;
+						setMissingTextures(textureErrors);
+					}
+				}, 200);
 			},
 			undefined,
 			(error) => {
@@ -616,6 +671,89 @@ export function App() {
 			setModelName(file.name);
 		} else {
 			alert("Please drop a valid .glb or .gltf file");
+		}
+	};
+
+	const handleTextureSelect = (e) => {
+		const files = Array.from(e.target.files);
+		if (files.length === 0) return;
+
+		const textureLoader = new THREE.TextureLoader();
+		const loadedTextures = new Map(); // filename -> texture
+		let loadedCount = 0;
+
+		// Load all selected texture files
+		files.forEach((file) => {
+			const url = URL.createObjectURL(file);
+			const filename = file.name;
+
+			textureLoader.load(
+				url,
+				(texture) => {
+					// Set proper color space for color maps (base color textures)
+					// This is critical for correct color rendering in Three.js
+					texture.colorSpace = THREE.SRGBColorSpace;
+
+					// Common texture settings
+					texture.flipY = false; // GLTF textures are not flipped
+					texture.wrapS = THREE.RepeatWrapping;
+					texture.wrapT = THREE.RepeatWrapping;
+
+					texture.needsUpdate = true;
+
+					loadedTextures.set(filename, texture);
+					loadedCount++;
+
+					// When all textures are loaded, apply them to materials
+					if (loadedCount === files.length) {
+						applyTexturesToMaterials(loadedTextures);
+					}
+				},
+				undefined,
+				(error) => {
+					console.error(`Failed to load texture ${filename}:`, error);
+					loadedCount++;
+					if (loadedCount === files.length) {
+						applyTexturesToMaterials(loadedTextures);
+					}
+				}
+			);
+		});
+	};
+
+	const applyTexturesToMaterials = (loadedTextures) => {
+		let appliedCount = 0;
+		const stillMissing = new Set(missingTextures);
+
+		materialsNeedingTexturesRef.current.forEach(({ material, mapType, expectedFilename }) => {
+			const texture = loadedTextures.get(expectedFilename);
+			if (texture) {
+				material[mapType] = texture;
+
+				// If applying a color map, ensure material color is white (not gray/dark)
+				if (mapType === 'map' && material.color) {
+					material.color.setHex(0xffffff);
+				}
+
+				material.needsUpdate = true;
+				stillMissing.delete(expectedFilename);
+				appliedCount++;
+			}
+		});
+
+		// Update missing textures list
+		setMissingTextures(Array.from(stillMissing));
+
+		// Remove applied materials from the tracking list
+		if (appliedCount > 0) {
+			materialsNeedingTexturesRef.current = materialsNeedingTexturesRef.current.filter(
+				({ expectedFilename }) => stillMissing.has(expectedFilename)
+			);
+
+			// Force renderer to update
+			if (rendererRef.current && sceneRef.current && cameraRef.current) {
+				rendererRef.current.render(sceneRef.current, cameraRef.current);
+			}
 		}
 	};
 
@@ -671,6 +809,15 @@ export function App() {
 				accept=".glb,.gltf"
 			/>
 
+			<input
+				type="file"
+				ref={textureFileInputRef}
+				onChange={handleTextureSelect}
+				className="hidden"
+				accept="image/*"
+				multiple
+			/>
+
 			{/* Left Panel: Metadata */}
 			<div className="absolute top-4 left-4 w-64 bg-black/50 backdrop-blur-md border border-white/10 rounded-lg p-4 text-white shadow-xl transition-opacity duration-300">
 				<div className="flex items-center gap-2 mb-4">
@@ -718,6 +865,16 @@ export function App() {
 					<FolderOpen className="w-4 h-4" />
 					Open File
 				</button>
+
+				{missingTextures.length > 0 && (
+					<button
+						onClick={() => textureFileInputRef.current?.click()}
+						className="mt-2 w-full flex items-center justify-center gap-2 bg-amber-500/20 hover:bg-amber-500/30 active:bg-amber-500/40 border border-amber-500/30 transition-colors py-2 px-3 rounded text-sm font-medium text-amber-200"
+					>
+						<FolderOpen className="w-4 h-4" />
+						Open Textures ({missingTextures.length})
+					</button>
+				)}
 			</div>
 
 			{/* Right Panel: Animations */}
