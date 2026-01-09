@@ -184,6 +184,9 @@ function getModelMetadata(object, sourceName) {
 }
 
 export function App() {
+	// Dynamic home URL based on environment
+	const homeUrl = import.meta.env.DEV ? "https://localhost:8030/" : "/";
+
 	const containerRef = useRef(null);
 	const videoRef = useRef(null);
 	const fileInputRef = useRef(null);
@@ -938,6 +941,23 @@ export function App() {
 			{status === "error" && (
 				<div className="placeholder text-red-400">{statusCopy.error}</div>
 			)}
+
+			{/* Bottom Left: Lab Logo Link */}
+			<div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur-md border border-white/10 rounded-lg px-4 py-3 shadow-xl transition-opacity duration-300 hover:bg-black/60">
+				<a
+					href={homeUrl}
+					className="flex items-center gap-2 text-white/90 hover:text-white no-underline transition-colors"
+				>
+					<img
+						src={`${homeUrl}lab-transparent.png`}
+						alt="Kortexa.ai Lab"
+						className="w-8 h-8 object-contain"
+					/>
+					<span className="text-xs font-semibold tracking-wider uppercase">
+						Kortexa.ai Lab
+					</span>
+				</a>
+			</div>
 		</div>
 	);
 }

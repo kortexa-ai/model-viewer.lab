@@ -50,3 +50,11 @@ body {
 	font-family: "Space Grotesk", sans-serif;
 	color: rgba(233, 245, 255, 0.8);
 }
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: none;
+}
