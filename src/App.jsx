@@ -1,8 +1,13 @@
-import { Camera } from "@mediapipe/camera_utils";
-import { FaceMesh } from "@mediapipe/face_mesh";
+import {
+	FaceLandmarker,
+	FilesetResolver,
+	HandLandmarker,
+} from "@mediapipe/tasks-vision";
+import { Box, FolderOpen, Play, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { clsx } from "clsx";
 
 const VIEWER_BACKGROUND = new THREE.Color(0x020205);
 
@@ -34,70 +39,105 @@ function disposeModel(object) {
 	});
 }
 
-const BOX_SIZE = 6;
+// The box depth is fixed, but width/height will match viewport aspect
+const BOX_DEPTH = 10;
+const FIXED_HEIGHT = 10; // World units for height
 
-function createVirtualBoxGrid() {
+function createVirtualBoxGrid(width, height, depth) {
 	const group = new THREE.Group();
 	const gridColor = 0x444444;
 	const lineCount = 10;
 
-	// Back wall grid
+	// Back wall grid (at z = -depth)
 	const backGrid = new THREE.GridHelper(
-		BOX_SIZE,
+		Math.max(width, depth),
 		lineCount,
 		gridColor,
 		gridColor,
 	);
 	backGrid.rotation.x = Math.PI / 2;
-	backGrid.position.z = -BOX_SIZE / 2;
+	backGrid.position.z = -depth;
+	backGrid.position.y = 0;
+	backGrid.scale.set(
+		width / Math.max(width, depth),
+		1,
+		height / Math.max(width, depth),
+	);
 	group.add(backGrid);
 
 	// Floor grid
 	const floorGrid = new THREE.GridHelper(
-		BOX_SIZE,
+		Math.max(width, depth),
 		lineCount,
 		gridColor,
 		gridColor,
 	);
-	floorGrid.position.y = -BOX_SIZE / 2;
+	floorGrid.position.y = -height / 2;
+	floorGrid.position.z = -depth / 2;
+	floorGrid.scale.set(
+		width / Math.max(width, depth),
+		1,
+		depth / Math.max(width, depth),
+	);
 	group.add(floorGrid);
 
 	// Ceiling grid
 	const ceilingGrid = new THREE.GridHelper(
-		BOX_SIZE,
+		Math.max(width, depth),
 		lineCount,
 		gridColor,
 		gridColor,
 	);
-	ceilingGrid.position.y = BOX_SIZE / 2;
+	ceilingGrid.position.y = height / 2;
+	ceilingGrid.position.z = -depth / 2;
+	ceilingGrid.scale.set(
+		width / Math.max(width, depth),
+		1,
+		depth / Math.max(width, depth),
+	);
 	group.add(ceilingGrid);
 
 	// Left wall grid
 	const leftGrid = new THREE.GridHelper(
-		BOX_SIZE,
+		Math.max(depth, height),
 		lineCount,
 		gridColor,
 		gridColor,
 	);
 	leftGrid.rotation.z = Math.PI / 2;
-	leftGrid.position.x = -BOX_SIZE / 2;
+	leftGrid.position.x = -width / 2;
+	leftGrid.position.z = -depth / 2;
+	leftGrid.scale.set(
+		height / Math.max(depth, height),
+		1,
+		depth / Math.max(depth, height),
+	);
 	group.add(leftGrid);
 
 	// Right wall grid
 	const rightGrid = new THREE.GridHelper(
-		BOX_SIZE,
+		Math.max(depth, height),
 		lineCount,
 		gridColor,
 		gridColor,
 	);
 	rightGrid.rotation.z = Math.PI / 2;
-	rightGrid.position.x = BOX_SIZE / 2;
+	rightGrid.position.x = width / 2;
+	rightGrid.position.z = -depth / 2;
+	rightGrid.scale.set(
+		height / Math.max(depth, height),
+		1,
+		depth / Math.max(depth, height),
+	);
 	group.add(rightGrid);
 
 	return group;
 }
 
-function frameObject(camera, object, offset = 1.4) {
+function frameObject(object, boxWidth, boxHeight, boxDepth) {
+    // Ensure matrix is updated for accurate bounding box
+    object.updateMatrixWorld(true);
+    
 	const box = new THREE.Box3().setFromObject(object);
 	const size = box.getSize(new THREE.Vector3());
 	const center = box.getCenter(new THREE.Vector3());
@@ -107,27 +147,58 @@ function frameObject(camera, object, offset = 1.4) {
 	}
 
 	object.position.sub(center);
+	object.position.z = -boxDepth / 2;
 
 	const maxDimension = Math.max(size.x, size.y, size.z);
-	const targetSize = (BOX_SIZE * 2) / 3;
+	const targetSize = Math.min(boxWidth, boxHeight, boxDepth) * 0.6;
 	const scale = targetSize / maxDimension;
 	object.scale.setScalar(scale);
+}
 
-	const fov = (camera.fov * Math.PI) / 180;
-	let cameraZ = Math.abs(BOX_SIZE / 2 / Math.tan(fov / 2));
-	cameraZ *= offset;
+function getModelMetadata(object, sourceName) {
+	let vertices = 0;
+	let triangles = 0;
 
-	camera.position.set(0, 0, cameraZ);
-	camera.near = cameraZ / 100;
-	camera.far = cameraZ * 100;
-	camera.updateProjectionMatrix();
+	object.traverse((child) => {
+		if (child.isMesh && child.geometry) {
+			vertices += child.geometry.attributes.position.count;
+			if (child.geometry.index) {
+				triangles += child.geometry.index.count / 3;
+			} else {
+				triangles += child.geometry.attributes.position.count / 3;
+			}
+		}
+	});
+
+	return {
+		name: sourceName || "Unknown Model",
+		vertices: vertices.toLocaleString(),
+		triangles: Math.floor(triangles).toLocaleString(),
+	};
 }
 
 export function App() {
 	const containerRef = useRef(null);
 	const videoRef = useRef(null);
+	const fileInputRef = useRef(null);
+
+	// State
 	const [modelSource, setModelSource] = useState(() => getModelUrl());
+	const [modelName, setModelName] = useState(() => {
+		const url = getModelUrl();
+		if (!url) return null;
+		try {
+			const parts = url.split("/");
+			return parts[parts.length - 1] || "URL Model";
+		} catch {
+			return "URL Model";
+		}
+	});
 	const [status, setStatus] = useState(modelSource ? "loading" : "idle");
+	const [metadata, setMetadata] = useState(null);
+	const [animations, setAnimations] = useState([]);
+	const [activeAnimIndex, setActiveAnimIndex] = useState(null);
+	const [isPlaying, setIsPlaying] = useState(false);
 
 	// Three.js references
 	const sceneRef = useRef(null);
@@ -135,11 +206,25 @@ export function App() {
 	const rendererRef = useRef(null);
 	const modelRef = useRef(null);
 	const gridRef = useRef(null);
+	const dimsRef = useRef({
+		width: FIXED_HEIGHT,
+		height: FIXED_HEIGHT,
+		depth: BOX_DEPTH,
+	});
+	const mixerRef = useRef(null);
+	const actionsRef = useRef([]);
+	const clockRef = useRef(new THREE.Clock());
 
-	// Face tracking references
-	const faceMeshRef = useRef(null);
-	const cameraUtilsRef = useRef(null);
+	// Tracking references
+	const faceLandmarkerRef = useRef(null);
+	const handLandmarkerRef = useRef(null);
 	const facePositionRef = useRef({ x: 0, y: 0 });
+	const isPinchingRef = useRef(false);
+	const prevPinchRef = useRef(null); // {x, y}
+	const requestRef = useRef(null);
+	const lastVideoTimeRef = useRef(-1);
+    const lastTrackingTimeRef = useRef(0);
+    const frameCounterRef = useRef(0);
 
 	// Initialize Scene
 	useEffect(() => {
@@ -158,7 +243,7 @@ export function App() {
 			0.1,
 			1000,
 		);
-		camera.position.set(0, 0, 3);
+		camera.position.set(0, 0, 20);
 		cameraRef.current = camera;
 
 		// Renderer
@@ -176,31 +261,95 @@ export function App() {
 		directional.position.set(4, 6, 8);
 		scene.add(directional);
 
-		// Virtual Box Grid
-		const grid = createVirtualBoxGrid();
+		// Initial Grid Setup
+		const aspect = container.clientWidth / container.clientHeight;
+		const width = FIXED_HEIGHT * aspect;
+		const height = FIXED_HEIGHT;
+		dimsRef.current = { width, height, depth: BOX_DEPTH };
+
+		const grid = createVirtualBoxGrid(width, height, BOX_DEPTH);
 		scene.add(grid);
 		gridRef.current = grid;
 
 		// Resize Handler
 		const handleResize = () => {
-			const width = container.clientWidth;
-			const height = container.clientHeight;
-			camera.aspect = width / height;
-			camera.updateProjectionMatrix();
-			renderer.setSize(width, height);
+			const w = container.clientWidth;
+			const h = container.clientHeight;
+			const newAspect = w / h;
+
+			renderer.setSize(w, h);
+
+			// Update Box Dimensions to match viewport
+			const newWidth = FIXED_HEIGHT * newAspect;
+			dimsRef.current = {
+				width: newWidth,
+				height: FIXED_HEIGHT,
+				depth: BOX_DEPTH,
+			};
+
+			// Recreate Grid
+			if (gridRef.current) {
+				scene.remove(gridRef.current);
+				gridRef.current.children.forEach((c) => c.geometry.dispose());
+			}
+			const newGrid = createVirtualBoxGrid(newWidth, FIXED_HEIGHT, BOX_DEPTH);
+			scene.add(newGrid);
+			gridRef.current = newGrid;
+
+			// Re-frame model if it exists
+			if (modelRef.current) {
+				frameObject(
+					modelRef.current,
+					newWidth,
+					FIXED_HEIGHT,
+					BOX_DEPTH,
+				);
+			}
 		};
 		window.addEventListener("resize", handleResize);
 
-		// Animation Loop with Parallax
+		// Animation Loop
 		let animationFrame;
 		const animate = () => {
 			animationFrame = window.requestAnimationFrame(animate);
 
+			const delta = clockRef.current.getDelta();
+
+			// Update Mixer
+			if (mixerRef.current) {
+				mixerRef.current.update(delta);
+			}
+
 			// Update camera position based on face tracking
 			const facePos = facePositionRef.current;
-			camera.position.x = facePos.x * 3; // 3x horizontal sensitivity
-			camera.position.y = facePos.y * 1.5; // 1.5x vertical sensitivity
-			camera.lookAt(0, 0, 0);
+			const rangeX = 15;
+			const rangeY = 15;
+
+			camera.position.x = -facePos.x * rangeX;
+			camera.position.y = facePos.y * rangeY;
+			camera.position.z = 20;
+
+			// Off-Axis Projection
+			const dist = camera.position.z;
+			const camPos = camera.position;
+			const halfW = dimsRef.current.width / 2;
+			const halfH = dimsRef.current.height / 2;
+			const left = -halfW - camPos.x;
+			const right = halfW - camPos.x;
+			const top = halfH - camPos.y;
+			const bottom = -halfH - camPos.y;
+			const near = 0.1;
+			const scale = near / dist;
+
+			camera.projectionMatrix.makePerspective(
+				left * scale,
+				right * scale,
+				top * scale,
+				bottom * scale,
+				near,
+				1000,
+			);
+			camera.rotation.set(0, 0, 0);
 
 			renderer.render(scene, camera);
 		};
@@ -217,92 +366,210 @@ export function App() {
 		};
 	}, []);
 
-	// Initialize Face Tracking
+	// Initialize Tracking (Face + Hands)
 	useEffect(() => {
+		/*
 		const video = videoRef.current;
 		if (!video) return;
 
-		// Initialize MediaPipe FaceMesh
-		const faceMesh = new FaceMesh({
-			locateFile: (file) => {
-				return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
-			},
-		});
+		const initTracking = async () => {
+			try {
+				const vision = await FilesetResolver.forVisionTasks(
+					"https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm",
+				);
 
-		faceMesh.setOptions({
-			maxNumFaces: 1,
-			refineLandmarks: true,
-			minDetectionConfidence: 0.5,
-			minTrackingConfidence: 0.5,
-		});
+				faceLandmarkerRef.current = await FaceLandmarker.createFromOptions(
+					vision,
+					{
+						baseOptions: {
+							modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+							delegate: "GPU",
+						},
+						outputFaceBlendshapes: true,
+						runningMode: "VIDEO", // Changed back to VIDEO
+						numFaces: 1,
+					},
+				);
 
-		faceMesh.onResults((results) => {
-			if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-				const landmarks = results.multiFaceLandmarks[0];
+				handLandmarkerRef.current = await HandLandmarker.createFromOptions(
+					vision,
+					{
+						baseOptions: {
+							modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+							delegate: "GPU",
+						},
+						runningMode: "VIDEO", // Changed back to VIDEO
+						numHands: 1,
+					},
+				);
 
-				// Use nose tip (landmark 1) as the center reference point
-				const noseTip = landmarks[1];
+				const stream = await navigator.mediaDevices.getUserMedia({
+					video: { width: 640, height: 480 },
+				});
+				video.srcObject = stream;
+				await video.play();
 
-				// Calculate offset from center (normalized coordinates are 0-1)
-				// Center is at 0.5, 0.5
-				const offsetX = noseTip.x - 0.5;
-				const offsetY = 0.5 - noseTip.y; // Invert Y so moving up is positive
+				const predictWebcam = () => {
+                    const now = performance.now();
+                    // Throttle tracking loop to ~30 FPS (33ms)
+                    if (now - lastTrackingTimeRef.current >= 33 && video.currentTime !== lastVideoTimeRef.current) {
+                        lastTrackingTimeRef.current = now;
+                        lastVideoTimeRef.current = video.currentTime;
+                        
+                        // Interleave detections:
+                        // Even frames: Face
+                        // Odd frames: Hands
+                        const frameCount = frameCounterRef.current++;
+                        
+                        if (frameCount % 2 === 0) {
+                            if (faceLandmarkerRef.current) {
+                                const result = faceLandmarkerRef.current.detectForVideo(video, now);
+                                if (result.faceLandmarks && result.faceLandmarks.length > 0) {
+                                    const landmarks = result.faceLandmarks[0];
+                                    const noseTip = landmarks[1];
+                                    const offsetX = noseTip.x - 0.5;
+                                    const offsetY = 0.5 - noseTip.y;
+                                    facePositionRef.current = { x: offsetX * 2, y: offsetY * 2 };
+                                }
+                            }
+                        } else {
+                            if (handLandmarkerRef.current) {
+                                const result = handLandmarkerRef.current.detectForVideo(video, now);
+                                if (result.landmarks && result.landmarks.length > 0) {
+                                    const landmarks = result.landmarks[0];
+                                    const thumbTip = landmarks[4];
+                                    const indexTip = landmarks[8];
 
-				// Update face position
-				facePositionRef.current = {
-					x: offsetX * 2, // Scale to -1 to 1 range
-					y: offsetY * 2,
+                                    const distance = Math.sqrt(
+                                        Math.pow(thumbTip.x - indexTip.x, 2) +
+                                            Math.pow(thumbTip.y - indexTip.y, 2),
+                                    );
+
+                                    const isPinching = distance < 0.1;
+                                    const pinchX = (thumbTip.x + indexTip.x) / 2;
+                                    const pinchY = (thumbTip.y + indexTip.y) / 2;
+
+                                    if (isPinching && modelRef.current) {
+                                        if (isPinchingRef.current && prevPinchRef.current) {
+                                            const deltaX = pinchX - prevPinchRef.current.x;
+                                            const deltaY = pinchY - prevPinchRef.current.y;
+                                            const sensitivity = 5;
+                                            modelRef.current.rotation.y += deltaX * sensitivity;
+                                            modelRef.current.rotation.x += deltaY * sensitivity;
+                                        }
+                                        prevPinchRef.current = { x: pinchX, y: pinchY };
+                                    } else {
+                                        prevPinchRef.current = null;
+                                    }
+                                    isPinchingRef.current = isPinching;
+                                } else {
+                                    isPinchingRef.current = false;
+                                    prevPinchRef.current = null;
+                                }
+                            }
+                        }
+                    }
+					requestRef.current = requestAnimationFrame(predictWebcam);
 				};
-			}
-		});
-
-		faceMeshRef.current = faceMesh;
-
-		// Initialize Camera Utils
-		const cameraUtils = new Camera(video, {
-			onFrame: async () => {
-				await faceMesh.send({ image: video });
-			},
-			width: 640,
-			height: 480,
-		});
-
-		cameraUtils.start();
-		cameraUtilsRef.current = cameraUtils;
-
-		// Cleanup
-		return () => {
-			if (cameraUtilsRef.current) {
-				cameraUtilsRef.current.stop();
-			}
-			if (faceMeshRef.current) {
-				faceMeshRef.current.close();
+                
+				predictWebcam();
+			} catch (err) {
+				console.error("Tracking init error:", err);
 			}
 		};
+
+		initTracking();
+
+		return () => {
+            if (requestRef.current) {
+                cancelAnimationFrame(requestRef.current);
+            }
+            if (video.srcObject) {
+                const tracks = video.srcObject.getTracks();
+                tracks.forEach(t => t.stop());
+            }
+            if (faceLandmarkerRef.current) {
+                faceLandmarkerRef.current.close();
+            }
+             if (handLandmarkerRef.current) {
+                handLandmarkerRef.current.close();
+            }
+		};
+		*/
 	}, []);
 
 	// Load Model
 	useEffect(() => {
-		if (!modelSource || !sceneRef.current || !cameraRef.current) return;
+		if (!modelSource || !sceneRef.current || !cameraRef.current) {
+			setMetadata(null);
+			setAnimations([]);
+			setActiveAnimIndex(null);
+			return;
+		}
 
 		setStatus("loading");
 		const loader = new GLTFLoader();
 
-		// Dispose previous model if exists
+        // 1. CLEAR PREVIOUS MODEL - Immediate Cleanup
 		if (modelRef.current) {
+            console.log("Removing previous model", modelRef.current);
 			sceneRef.current.remove(modelRef.current);
 			disposeModel(modelRef.current);
 			modelRef.current = null;
 		}
 
+		// Reset Mixer
+		mixerRef.current = null;
+		actionsRef.current = [];
+		setAnimations([]);
+		setActiveAnimIndex(null);
+		setIsPlaying(false);
+
 		loader.load(
 			modelSource,
 			(gltf) => {
 				const model = gltf.scene;
+                
+                // 2. DOUBLE CHECK - Before adding, ensure we didn't start loading another model in parallel
+                if (modelSource !== getModelUrl() && !modelName.includes("URL")) {
+                     // This is a naive check (checking current URL param vs closure).
+                     // Better: check if we are still the active request?
+                     // For simplicity: We will trust the React effect cleanup has run if source changed.
+                     // But we must ensure we remove any *other* model that might have snuck in (unlikely with this effect structure).
+                     if (modelRef.current) {
+                         sceneRef.current.remove(modelRef.current);
+                         disposeModel(modelRef.current);
+                     }
+                } else if (modelRef.current) {
+                     // If we already have a model ref (maybe from a race condition?), remove it.
+                     sceneRef.current.remove(modelRef.current);
+                     disposeModel(modelRef.current);
+                }
+
 				sceneRef.current.add(model);
 				modelRef.current = model;
-				frameObject(cameraRef.current, model);
+				frameObject(
+					model,
+					dimsRef.current.width,
+					dimsRef.current.height,
+					dimsRef.current.depth,
+				);
 				setStatus("ready");
+
+				// Metadata
+				setMetadata(getModelMetadata(model, modelName));
+
+				// Animations
+				if (gltf.animations && gltf.animations.length > 0) {
+					setAnimations(gltf.animations);
+					const mixer = new THREE.AnimationMixer(model);
+					mixerRef.current = mixer;
+
+					// Create actions for all clips
+					actionsRef.current = gltf.animations.map((clip) =>
+						mixer.clipAction(clip),
+					);
+				}
 			},
 			undefined,
 			(error) => {
@@ -310,13 +577,32 @@ export function App() {
 				setStatus("error");
 			},
 		);
-	}, [modelSource]);
+        
+        // CLEANUP FUNCTION for the effect itself
+        return () => {
+            // If the component unmounts or modelSource changes while loading,
+            // we can't easily cancel GLTFLoader (it doesn't return abort controller easily).
+            // But we CAN ensure that if a model arrives later, we don't use it, OR if we have one, we remove it.
+            // However, doing it here might remove the *newly* loaded model if the effect re-runs.
+            // The synchronous cleanup at the start of the effect is usually safer for "switching" models.
+        };
+	}, [modelSource, modelName]);
 
-	// Drag and Drop Handlers
-	const handleDragOver = (e) => {
-		e.preventDefault();
+	// Handlers
+	const handleFileSelect = (e) => {
+		const file = e.target.files[0];
+		if (
+			file &&
+			(file.name.toLowerCase().endsWith(".glb") ||
+				file.name.toLowerCase().endsWith(".gltf"))
+		) {
+			const url = URL.createObjectURL(file);
+			setModelSource(url);
+			setModelName(file.name);
+		}
 	};
 
+	const handleDragOver = (e) => e.preventDefault();
 	const handleDrop = (e) => {
 		e.preventDefault();
 		const file = e.dataTransfer.files[0];
@@ -327,14 +613,41 @@ export function App() {
 		) {
 			const url = URL.createObjectURL(file);
 			setModelSource(url);
+			setModelName(file.name);
 		} else {
 			alert("Please drop a valid .glb or .gltf file");
 		}
 	};
 
+	const playAnimation = (index) => {
+		if (!mixerRef.current) return;
+
+		const action = actionsRef.current[index];
+		const currentAction =
+			activeAnimIndex !== null ? actionsRef.current[activeAnimIndex] : null;
+
+		if (currentAction && currentAction !== action) {
+			currentAction.fadeOut(0.5);
+		}
+
+		if (action) {
+			action.reset().fadeIn(0.5).play();
+			setActiveAnimIndex(index);
+			setIsPlaying(true);
+		}
+	};
+
+	const stopAnimation = () => {
+		if (activeAnimIndex !== null && actionsRef.current[activeAnimIndex]) {
+			actionsRef.current[activeAnimIndex].fadeOut(0.5);
+		}
+		setActiveAnimIndex(null);
+		setIsPlaying(false);
+	};
+
 	return (
 		<div
-			className="app"
+			className="app font-sans"
 			onDragOver={handleDragOver}
 			onDrop={handleDrop}
 			role="application"
@@ -342,22 +655,130 @@ export function App() {
 			<div className="viewer" ref={containerRef} />
 			<video
 				ref={videoRef}
-				style={{
-					position: "absolute",
-					width: "1px",
-					height: "1px",
-					opacity: 0,
-					pointerEvents: "none",
-				}}
+				className="hidden"
 				playsInline
 				muted
 				tabIndex={-1}
 			>
 				<track kind="captions" />
 			</video>
-			{status !== "ready" ? (
-				<div className="placeholder">{statusCopy[status]}</div>
-			) : null}
+
+			<input
+				type="file"
+				ref={fileInputRef}
+				onChange={handleFileSelect}
+				className="hidden"
+				accept=".glb,.gltf"
+			/>
+
+			{/* Left Panel: Metadata */}
+			<div className="absolute top-4 left-4 w-64 bg-black/50 backdrop-blur-md border border-white/10 rounded-lg p-4 text-white shadow-xl transition-opacity duration-300">
+				<div className="flex items-center gap-2 mb-4">
+					<Box className="w-5 h-5 text-blue-400" />
+					<h2 className="font-semibold text-sm uppercase tracking-wider">
+						Model Info
+					</h2>
+				</div>
+
+				{metadata ? (
+					<div className="space-y-3 text-sm text-gray-300">
+						<div>
+							<span className="block text-xs text-gray-500 uppercase">
+								Name
+							</span>
+							<span className="font-medium text-white truncate block">
+								{metadata.name}
+							</span>
+						</div>
+						<div className="grid grid-cols-2 gap-2">
+							<div>
+								<span className="block text-xs text-gray-500 uppercase">
+									Vertices
+								</span>
+								<span>{metadata.vertices}</span>
+							</div>
+							<div>
+								<span className="block text-xs text-gray-500 uppercase">
+									Triangles
+								</span>
+								<span>{metadata.triangles}</span>
+							</div>
+						</div>
+					</div>
+				) : (
+					<div className="text-sm text-gray-500 italic py-2">
+						No model loaded.
+					</div>
+				)}
+
+				<button
+					onClick={() => fileInputRef.current?.click()}
+					className="mt-4 w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 active:bg-white/30 transition-colors py-2 px-3 rounded text-sm font-medium"
+				>
+					<FolderOpen className="w-4 h-4" />
+					Open File
+				</button>
+			</div>
+
+			{/* Right Panel: Animations */}
+			{animations.length > 0 && (
+				<div className="absolute top-4 right-4 w-64 bg-black/50 backdrop-blur-md border border-white/10 rounded-lg p-4 text-white shadow-xl max-h-[80vh] flex flex-col">
+					<div className="flex items-center gap-2 mb-4 shrink-0">
+						<Play className="w-5 h-5 text-green-400" />
+						<h2 className="font-semibold text-sm uppercase tracking-wider">
+							Animations
+						</h2>
+					</div>
+
+					<div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+						{animations.map((clip, idx) => (
+							<button
+								key={idx}
+								onClick={() => playAnimation(idx)}
+								className={clsx(
+									"w-full text-left px-3 py-2 rounded text-sm transition-all flex items-center gap-2",
+									activeAnimIndex === idx
+										? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+										: "hover:bg-white/5 text-gray-400 hover:text-white",
+								)}
+							>
+								<span className="truncate flex-1">{clip.name}</span>
+								{activeAnimIndex === idx && isPlaying && (
+									<div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+								)}
+							</button>
+						))}
+					</div>
+
+					<div className="mt-4 pt-3 border-t border-white/10 shrink-0 flex gap-2">
+						<button
+							onClick={stopAnimation}
+							disabled={!isPlaying}
+							className="flex-1 flex items-center justify-center gap-2 bg-red-500/20 text-red-300 hover:bg-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed py-2 rounded text-sm font-medium transition-colors"
+						>
+							<Square className="w-4 h-4 fill-current" />
+							Stop
+						</button>
+					</div>
+				</div>
+			)}
+
+			{status === "loading" && (
+				<div className="placeholder animate-pulse">{statusCopy[status]}</div>
+			)}
+
+			{status === "idle" && (
+				<div className="placeholder text-center">
+					<p className="mb-2">{statusCopy.idle}</p>
+					<p className="text-sm opacity-50">
+						Use pinch gesture to rotate model
+					</p>
+				</div>
+			)}
+
+			{status === "error" && (
+				<div className="placeholder text-red-400">{statusCopy.error}</div>
+			)}
 		</div>
 	);
 }
