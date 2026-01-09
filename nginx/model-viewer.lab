@@ -1,0 +1,9 @@
+# Lab demo fragment: model-viewer.lab served at /model-viewer/
+location = /model-viewer {
+    return 302 /model-viewer/;
+}
+
+location /model-viewer/ {
+    alias /home/francip/src/model-viewer.lab/dist/;
+    try_files $uri $uri/ /index.html;
+}

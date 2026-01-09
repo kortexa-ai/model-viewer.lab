@@ -1,9 +1,0 @@
-# Lab demo fragment: weird.lab served at /weird/
-location = /weird {
-    return 302 /weird/;
-}
-
-location /weird/ {
-    alias /home/francip/src/weird.lab/dist/;
-    try_files $uri $uri/ /index.html;
-}
