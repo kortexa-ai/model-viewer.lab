@@ -380,7 +380,6 @@ export function App() {
 
 	// Initialize Tracking (Face + Hands)
 	useEffect(() => {
-		/*
 		const video = videoRef.current;
 		if (!video) return;
 
@@ -398,7 +397,7 @@ export function App() {
 							delegate: "GPU",
 						},
 						outputFaceBlendshapes: true,
-						runningMode: "VIDEO", // Changed back to VIDEO
+						runningMode: "VIDEO",
 						numFaces: 1,
 					},
 				);
@@ -410,7 +409,7 @@ export function App() {
 							modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
 							delegate: "GPU",
 						},
-						runningMode: "VIDEO", // Changed back to VIDEO
+						runningMode: "VIDEO",
 						numHands: 1,
 					},
 				);
@@ -427,12 +426,12 @@ export function App() {
                     if (now - lastTrackingTimeRef.current >= 33 && video.currentTime !== lastVideoTimeRef.current) {
                         lastTrackingTimeRef.current = now;
                         lastVideoTimeRef.current = video.currentTime;
-                        
+
                         // Interleave detections:
                         // Even frames: Face
                         // Odd frames: Hands
                         const frameCount = frameCounterRef.current++;
-                        
+
                         if (frameCount % 2 === 0) {
                             if (faceLandmarkerRef.current) {
                                 const result = faceLandmarkerRef.current.detectForVideo(video, now);
@@ -483,7 +482,7 @@ export function App() {
                     }
 					requestRef.current = requestAnimationFrame(predictWebcam);
 				};
-                
+
 				predictWebcam();
 			} catch (err) {
 				console.error("Tracking init error:", err);
@@ -507,7 +506,6 @@ export function App() {
                 handLandmarkerRef.current.close();
             }
 		};
-		*/
 	}, []);
 
 	// Load Model
