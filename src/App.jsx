@@ -232,8 +232,8 @@ export function App() {
 	const prevPinchRef = useRef(null); // {x, y}
 	const requestRef = useRef(null);
 	const lastVideoTimeRef = useRef(-1);
-    const lastTrackingTimeRef = useRef(0);
-    const frameCounterRef = useRef(0);
+    const lastFaceTrackingTimeRef = useRef(0);
+    const lastHandTrackingTimeRef = useRef(0);
 
 	// Initialize Scene
 	useEffect(() => {
@@ -322,6 +322,9 @@ export function App() {
 
 		// Animation Loop
 		let animationFrame;
+		let smoothedFacePos = { x: 0, y: 0 };
+		const smoothingFactor = 0.1; // Lower = smoother but more lag
+
 		const animate = () => {
 			animationFrame = window.requestAnimationFrame(animate);
 
@@ -332,13 +335,16 @@ export function App() {
 				mixerRef.current.update(delta);
 			}
 
-			// Update camera position based on face tracking
+			// Smoothly interpolate camera position based on face tracking
 			const facePos = facePositionRef.current;
+			smoothedFacePos.x += (facePos.x - smoothedFacePos.x) * smoothingFactor;
+			smoothedFacePos.y += (facePos.y - smoothedFacePos.y) * smoothingFactor;
+
 			const rangeX = 15;
 			const rangeY = 15;
 
-			camera.position.x = -facePos.x * rangeX;
-			camera.position.y = facePos.y * rangeY;
+			camera.position.x = -smoothedFacePos.x * rangeX;
+			camera.position.y = smoothedFacePos.y * rangeY;
 			camera.position.z = 20;
 
 			// Off-Axis Projection
@@ -422,64 +428,62 @@ export function App() {
 
 				const predictWebcam = () => {
                     const now = performance.now();
-                    // Throttle tracking loop to ~30 FPS (33ms)
-                    if (now - lastTrackingTimeRef.current >= 33 && video.currentTime !== lastVideoTimeRef.current) {
-                        lastTrackingTimeRef.current = now;
+
+                    // Face tracking: ~20 FPS (50ms interval)
+                    if (now - lastFaceTrackingTimeRef.current >= 50 && video.currentTime !== lastVideoTimeRef.current) {
+                        lastFaceTrackingTimeRef.current = now;
                         lastVideoTimeRef.current = video.currentTime;
 
-                        // Interleave detections:
-                        // Even frames: Face
-                        // Odd frames: Hands
-                        const frameCount = frameCounterRef.current++;
-
-                        if (frameCount % 2 === 0) {
-                            if (faceLandmarkerRef.current) {
-                                const result = faceLandmarkerRef.current.detectForVideo(video, now);
-                                if (result.faceLandmarks && result.faceLandmarks.length > 0) {
-                                    const landmarks = result.faceLandmarks[0];
-                                    const noseTip = landmarks[1];
-                                    const offsetX = noseTip.x - 0.5;
-                                    const offsetY = 0.5 - noseTip.y;
-                                    facePositionRef.current = { x: offsetX * 2, y: offsetY * 2 };
-                                }
-                            }
-                        } else {
-                            if (handLandmarkerRef.current) {
-                                const result = handLandmarkerRef.current.detectForVideo(video, now);
-                                if (result.landmarks && result.landmarks.length > 0) {
-                                    const landmarks = result.landmarks[0];
-                                    const thumbTip = landmarks[4];
-                                    const indexTip = landmarks[8];
-
-                                    const distance = Math.sqrt(
-                                        Math.pow(thumbTip.x - indexTip.x, 2) +
-                                            Math.pow(thumbTip.y - indexTip.y, 2),
-                                    );
-
-                                    const isPinching = distance < 0.1;
-                                    const pinchX = (thumbTip.x + indexTip.x) / 2;
-                                    const pinchY = (thumbTip.y + indexTip.y) / 2;
-
-                                    if (isPinching && modelRef.current) {
-                                        if (isPinchingRef.current && prevPinchRef.current) {
-                                            const deltaX = pinchX - prevPinchRef.current.x;
-                                            const deltaY = pinchY - prevPinchRef.current.y;
-                                            const sensitivity = 5;
-                                            modelRef.current.rotation.y += deltaX * sensitivity;
-                                            modelRef.current.rotation.x += deltaY * sensitivity;
-                                        }
-                                        prevPinchRef.current = { x: pinchX, y: pinchY };
-                                    } else {
-                                        prevPinchRef.current = null;
-                                    }
-                                    isPinchingRef.current = isPinching;
-                                } else {
-                                    isPinchingRef.current = false;
-                                    prevPinchRef.current = null;
-                                }
+                        if (faceLandmarkerRef.current) {
+                            const result = faceLandmarkerRef.current.detectForVideo(video, now);
+                            if (result.faceLandmarks && result.faceLandmarks.length > 0) {
+                                const landmarks = result.faceLandmarks[0];
+                                const noseTip = landmarks[1];
+                                const offsetX = noseTip.x - 0.5;
+                                const offsetY = 0.5 - noseTip.y;
+                                facePositionRef.current = { x: offsetX * 2, y: offsetY * 2 };
                             }
                         }
                     }
+
+                    // Hand tracking: ~7 FPS (150ms interval) - less frequent since it's less important
+                    if (now - lastHandTrackingTimeRef.current >= 150) {
+                        lastHandTrackingTimeRef.current = now;
+
+                        if (handLandmarkerRef.current) {
+                            const result = handLandmarkerRef.current.detectForVideo(video, now);
+                            if (result.landmarks && result.landmarks.length > 0) {
+                                const landmarks = result.landmarks[0];
+                                const thumbTip = landmarks[4];
+                                const indexTip = landmarks[8];
+
+                                const distance = Math.sqrt(
+                                    Math.pow(thumbTip.x - indexTip.x, 2) +
+                                        Math.pow(thumbTip.y - indexTip.y, 2),
+                                );
+
+                                const isPinching = distance < 0.1;
+                                const pinchX = (thumbTip.x + indexTip.x) / 2;
+                                const pinchY = (thumbTip.y + indexTip.y) / 2;
+
+                                if (isPinching && modelRef.current) {
+                                    if (isPinchingRef.current && prevPinchRef.current) {
+                                        const deltaX = pinchX - prevPinchRef.current.x;
+                                        const sensitivity = 10;
+                                        modelRef.current.rotation.y -= deltaX * sensitivity; // Horizontal rotation only
+                                    }
+                                    prevPinchRef.current = { x: pinchX, y: pinchY };
+                                } else {
+                                    prevPinchRef.current = null;
+                                }
+                                isPinchingRef.current = isPinching;
+                            } else {
+                                isPinchingRef.current = false;
+                                prevPinchRef.current = null;
+                            }
+                        }
+                    }
+
 					requestRef.current = requestAnimationFrame(predictWebcam);
 				};
 
