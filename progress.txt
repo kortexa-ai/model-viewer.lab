@@ -23,7 +23,7 @@
 
 ### Next Steps:
 - [x] GLTF Loader (URL parameters)
-- [ ] GLTF Loader (drag-and-drop/file selection)
+- [x] GLTF Loader (drag-and-drop/file selection)
 - [ ] Parallax View with virtual box grid
 - [ ] Face tracking with MediaPipe
 - [ ] Camera perspective updates
@@ -32,3 +32,5 @@
 
 ✅ Implemented GLTF loading via the `?model=` URL parameter
 ✅ Added Three.js scene bootstrap with camera framing and load status messaging
+✅ Implemented drag-and-drop GLTF/GLB file loading
+✅ Refactored App.jsx to separate scene initialization from model loading for dynamic updates

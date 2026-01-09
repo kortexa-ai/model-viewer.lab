@@ -5,9 +5,9 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 const VIEWER_BACKGROUND = new THREE.Color(0x020205);
 
 const statusCopy = {
-  idle: "Add ?model=URL to load a GLTF/GLB file.",
+  idle: "Drag & drop a GLTF/GLB file, or add ?model=URL",
   loading: "Loading model...",
-  error: "Failed to load model. Check the URL and CORS settings.",
+  error: "Failed to load model. Check the file or URL.",
 };
 
 function getModelUrl() {
@@ -54,18 +54,26 @@ function frameObject(camera, object, offset = 1.4) {
 
 export function App() {
   const containerRef = useRef(null);
-  const modelUrl = useMemo(() => getModelUrl(), []);
-  const [status, setStatus] = useState(modelUrl ? "loading" : "idle");
+  const [modelSource, setModelSource] = useState(() => getModelUrl());
+  const [status, setStatus] = useState(modelSource ? "loading" : "idle");
 
+  // Three.js references
+  const sceneRef = useRef(null);
+  const cameraRef = useRef(null);
+  const rendererRef = useRef(null);
+  const modelRef = useRef(null);
+
+  // Initialize Scene
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) {
-      return undefined;
-    }
+    if (!container) return;
 
+    // Scene
     const scene = new THREE.Scene();
     scene.background = VIEWER_BACKGROUND;
+    sceneRef.current = scene;
 
+    // Camera
     const camera = new THREE.PerspectiveCamera(
       45,
       container.clientWidth / container.clientHeight,
@@ -73,12 +81,16 @@ export function App() {
       1000
     );
     camera.position.set(0, 0, 3);
+    cameraRef.current = camera;
 
+    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
 
+    // Lights
     const ambient = new THREE.AmbientLight(0xffffff, 0.75);
     scene.add(ambient);
 
@@ -86,11 +98,7 @@ export function App() {
     directional.position.set(4, 6, 8);
     scene.add(directional);
 
-    const loader = new GLTFLoader();
-    let activeModel = null;
-    let animationFrame = null;
-    let disposed = false;
-
+    // Resize Handler
     const handleResize = () => {
       const width = container.clientWidth;
       const height = container.clientHeight;
@@ -98,65 +106,80 @@ export function App() {
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
     };
+    window.addEventListener("resize", handleResize);
 
+    // Animation Loop
+    let animationFrame;
     const animate = () => {
       animationFrame = window.requestAnimationFrame(animate);
       renderer.render(scene, camera);
     };
-
-    const loadModel = (url) => {
-      if (!url) {
-        return;
-      }
-      loader.load(
-        url,
-        (gltf) => {
-          if (disposed) {
-            return;
-          }
-          if (activeModel) {
-            scene.remove(activeModel);
-            disposeModel(activeModel);
-          }
-          activeModel = gltf.scene;
-          scene.add(activeModel);
-          frameObject(camera, activeModel);
-          setStatus("ready");
-        },
-        undefined,
-        (error) => {
-          if (disposed) {
-            return;
-          }
-          console.error("Failed to load model:", error);
-          setStatus("error");
-        }
-      );
-    };
-
-    window.addEventListener("resize", handleResize);
     animate();
-    loadModel(modelUrl);
 
+    // Cleanup
     return () => {
-      disposed = true;
       window.removeEventListener("resize", handleResize);
-      if (animationFrame) {
-        window.cancelAnimationFrame(animationFrame);
-      }
-      if (activeModel) {
-        scene.remove(activeModel);
-        disposeModel(activeModel);
-      }
+      window.cancelAnimationFrame(animationFrame);
       renderer.dispose();
       if (renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
     };
-  }, [modelUrl]);
+  }, []);
+
+  // Load Model
+  useEffect(() => {
+    if (!modelSource || !sceneRef.current || !cameraRef.current) return;
+
+    setStatus("loading");
+    const loader = new GLTFLoader();
+
+    // Dispose previous model if exists
+    if (modelRef.current) {
+      sceneRef.current.remove(modelRef.current);
+      disposeModel(modelRef.current);
+      modelRef.current = null;
+    }
+
+    loader.load(
+      modelSource,
+      (gltf) => {
+        const model = gltf.scene;
+        sceneRef.current.add(model);
+        modelRef.current = model;
+        frameObject(cameraRef.current, model);
+        setStatus("ready");
+      },
+      undefined,
+      (error) => {
+        console.error("Failed to load model:", error);
+        setStatus("error");
+      }
+    );
+  }, [modelSource]);
+
+  // Drag and Drop Handlers
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file && (file.name.toLowerCase().endsWith(".glb") || file.name.toLowerCase().endsWith(".gltf"))) {
+      const url = URL.createObjectURL(file);
+      setModelSource(url);
+    } else {
+      alert("Please drop a valid .glb or .gltf file");
+    }
+  };
 
   return (
-    <div className="app">
+    <div 
+      className="app" 
+      onDragOver={handleDragOver} 
+      onDrop={handleDrop}
+    >
       <div className="viewer" ref={containerRef} />
       {status !== "ready" ? (
         <div className="placeholder">{statusCopy[status]}</div>

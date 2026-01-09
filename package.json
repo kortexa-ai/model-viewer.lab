@@ -1,0 +1,48 @@
+{
+	"name": "@kortexa-ai/model-viewer.lab",
+	"version": "0.1.0",
+	"description": "3D Model Viewer with Face Tracking Parallax",
+	"copyright": "Copyright © 2026 kortexa.ai",
+	"author": {
+		"name": "Franci Penov",
+		"email": "francip@kortexa.ai",
+		"url": "https://kortexa.ai"
+	},
+	"keywords": ["3d", "model-viewer", "gltf", "face-tracking", "parallax"],
+	"license": "MIT",
+	"private": true,
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kortexa-ai/model-viewer.lab.git"
+	},
+	"type": "module",
+	"scripts": {
+		"start": "vite",
+		"dev": "vite",
+		"clean": "rm -rf .next dist dev-dist lib build coverage .firebase data server/data",
+		"build": "vite build --mode production",
+		"build:nomin": "vite build --mode production --minify false --sourcemap inline",
+		"preview": "vite preview"
+	},
+	"dependencies": {
+		"@mediapipe/face_mesh": "^0.4.1633559619",
+		"@mediapipe/camera_utils": "^0.3.1620248953",
+		"class-variance-authority": "^0.7.1",
+		"clsx": "^2.1.1",
+		"lucide-react": "^0.553.0",
+		"react": "^19.2.0",
+		"react-dom": "^19.2.0",
+        "tailwind-merge": "^3.4.0",
+		"three": "^0.182.0"
+	},
+	"devDependencies": {
+		"@tailwindcss/typography": "^0.5.19",
+		"@tailwindcss/vite": "^4.1.17",
+		"@vitejs/plugin-react-swc": "^4.2.2",
+        "dotenv": "^17.2.3",
+        "tailwindcss": "^4.1.17",
+        "tailwindcss-animate": "^1.0.7",
+		"vite": "^7.2.4",
+		"vite-plugin-mkcert": "^1.17.9"
+	}
+}
